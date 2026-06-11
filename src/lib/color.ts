@@ -104,6 +104,52 @@ export function parseColor(input: string | null | undefined): ParseResult {
   }
 }
 
+function rgbToHex(r: number, g: number, b: number): string {
+  return formatHex({ mode: 'rgb', r: r / 255, g: g / 255, b: b / 255 })
+}
+
+function hsvToRgb(h: number, s: number, v: number): RGB {
+  s /= 100
+  v /= 100
+  const c = v * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = v - c
+
+  let r = 0, g = 0, b = 0
+  if (h >= 0 && h < 60) {
+    r = c; g = x; b = 0
+  } else if (h >= 60 && h < 120) {
+    r = x; g = c; b = 0
+  } else if (h >= 120 && h < 180) {
+    r = 0; g = c; b = x
+  } else if (h >= 180 && h < 240) {
+    r = 0; g = x; b = c
+  } else if (h >= 240 && h < 300) {
+    r = x; g = 0; b = c
+  } else if (h >= 300 && h < 360) {
+    r = c; g = 0; b = x
+  }
+
+  return {
+    r: clamp(Math.round((r + m) * 255), 0, 255),
+    g: clamp(Math.round((g + m) * 255), 0, 255),
+    b: clamp(Math.round((b + m) * 255), 0, 255),
+  }
+}
+
+function cmykToRgb(c: number, m: number, y: number, k: number): RGB {
+  c /= 100
+  m /= 100
+  y /= 100
+  k /= 100
+
+  return {
+    r: clamp(Math.round((1 - c) * (1 - k) * 255), 0, 255),
+    g: clamp(Math.round((1 - m) * (1 - k) * 255), 0, 255),
+    b: clamp(Math.round((1 - y) * (1 - k) * 255), 0, 255),
+  }
+}
+
 function detectAndParse(input: string): ParseResult | null {
   const pureNumbers = input.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(-?\d+(?:\.\d+)?))?$/)
   if (pureNumbers) {
@@ -116,17 +162,55 @@ function detectAndParse(input: string): ParseResult | null {
     if (a !== undefined) {
       rgbObj.a = clamp(parseFloat(a), 0, 1)
     }
-    const parsed = parse(`rgb(${rgbObj.r}, ${rgbObj.g}, ${rgbObj.b})`)
-    if (parsed) {
-      return {
-        ok: true,
-        color: {
-          format: 'rgb',
-          value: rgbObj,
-          hex: formatHex(parsed),
-          hasAlpha: a !== undefined,
-        },
-      }
+    return {
+      ok: true,
+      color: {
+        format: 'rgb',
+        value: rgbObj,
+        hex: rgbToHex(rgbObj.r, rgbObj.g, rgbObj.b),
+        hasAlpha: a !== undefined,
+      },
+    }
+  }
+
+  const hsvMatch = input.match(/^hsv\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*%\s*,\s*(-?\d+(?:\.\d+)?)\s*%\s*\)$/i)
+  if (hsvMatch) {
+    const [, h, s, v] = hsvMatch
+    const hsvObj: HSV = {
+      h: normalizeAngle(parseFloat(h)),
+      s: clamp(parseFloat(s), 0, 100),
+      v: clamp(parseFloat(v), 0, 100),
+    }
+    const rgb = hsvToRgb(hsvObj.h, hsvObj.s, hsvObj.v)
+    return {
+      ok: true,
+      color: {
+        format: 'hsv',
+        value: hsvObj,
+        hex: rgbToHex(rgb.r, rgb.g, rgb.b),
+        hasAlpha: false,
+      },
+    }
+  }
+
+  const cmykMatch = input.match(/^cmyk\(\s*(-?\d+(?:\.\d+)?)\s*%\s*,\s*(-?\d+(?:\.\d+)?)\s*%\s*,\s*(-?\d+(?:\.\d+)?)\s*%\s*,\s*(-?\d+(?:\.\d+)?)\s*%\s*\)$/i)
+  if (cmykMatch) {
+    const [, c, m, y, k] = cmykMatch
+    const cmykObj: CMYK = {
+      c: clamp(parseFloat(c), 0, 100),
+      m: clamp(parseFloat(m), 0, 100),
+      y: clamp(parseFloat(y), 0, 100),
+      k: clamp(parseFloat(k), 0, 100),
+    }
+    const rgb = cmykToRgb(cmykObj.c, cmykObj.m, cmykObj.y, cmykObj.k)
+    return {
+      ok: true,
+      color: {
+        format: 'cmyk',
+        value: cmykObj,
+        hex: rgbToHex(rgb.r, rgb.g, rgb.b),
+        hasAlpha: false,
+      },
     }
   }
 
@@ -139,18 +223,16 @@ function detectAndParse(input: string): ParseResult | null {
       hex = hex.split('').map(c => c + c).join('')
     }
     if (hex.length === 6 || hex.length === 8) {
-      const parsed = parse('#' + hex)
-      if (parsed) {
-        const hasAlpha = hex.length === 8
-        return {
-          ok: true,
-          color: {
-            format: 'hex',
-            value: hexToRgb('#' + hex, hasAlpha),
-            hex: formatHex(parsed),
-            hasAlpha,
-          },
-        }
+      const hexStr = '#' + hex
+      const rgb = hexToRgb(hexStr, hex.length === 8)
+      return {
+        ok: true,
+        color: {
+          format: 'hex',
+          value: rgb,
+          hex: rgbToHex(rgb.r, rgb.g, rgb.b),
+          hasAlpha: hex.length === 8,
+        },
       }
     }
   }

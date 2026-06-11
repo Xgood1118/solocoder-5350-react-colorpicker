@@ -69,6 +69,45 @@ describe('parseColor', () => {
     }
   })
 
+  it('解析 HSV 字符串', () => {
+    const result = parseColor('hsv(0, 100%, 100%)')
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.color.hex.toLowerCase()).toBe('#ff0000')
+      expect(result.color.format).toBe('hsv')
+    }
+  })
+
+  it('解析 CMYK 字符串', () => {
+    const result = parseColor('cmyk(0%, 100%, 100%, 0%)')
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.color.hex.toLowerCase()).toBe('#ff0000')
+      expect(result.color.format).toBe('cmyk')
+    }
+  })
+
+  it('HSV 越界值处理', () => {
+    const result = parseColor('hsv(720, 150%, 150%)')
+    expect(result.ok).toBe(true)
+    if (result.ok && result.color.format === 'hsv') {
+      const hsv = result.color.value as { h: number; s: number; v: number }
+      expect(hsv.h).toBe(0)
+      expect(hsv.s).toBe(100)
+      expect(hsv.v).toBe(100)
+    }
+  })
+
+  it('CMYK 越界值处理', () => {
+    const result = parseColor('cmyk(-50%, 150%, 100%, 100%)')
+    expect(result.ok).toBe(true)
+    if (result.ok && result.color.format === 'cmyk') {
+      const cmyk = result.color.value as { c: number; m: number; y: number; k: number }
+      expect(cmyk.c).toBe(0)
+      expect(cmyk.m).toBe(100)
+    }
+  })
+
   it('RGB 越界值截断', () => {
     const result = parseColor('300, -10, 128')
     expect(result.ok).toBe(true)
