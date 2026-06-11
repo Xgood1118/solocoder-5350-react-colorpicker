@@ -1,0 +1,39 @@
+我前端开发做 UI 的时候经常需要取色、转换颜色格式，每次都打开 Photoshop 太重，所以想搞个在线取色器工具，纯前端 React 应用。技术栈用 React 18 + Vite + TypeScript（严格模式 strict: true），UI 用 Radix UI（无样式基础组件）+ Tailwind CSS（utility first 写得快），颜色计算用 culori 这个专业库（color conversion 算法比手写准），状态管理用 zustand（不要 redux，工具类项目不需要这么重），依赖总数控制在 15 个以内。
+
+核心功能是颜色转换器：用户输入一个颜色（HEX、RGB、HSL、HSV、CMYK、LAB、LCH 任何一种格式），工具自动识别并显示其他所有格式的等价表示。比如用户输入 "#ff0000"，下面同时显示 rgb(255, 0, 0)、hsl(0, 100%, 50%)、hsv(0, 100%, 100%) 这些。输入框要支持多种写法：HEX 简写 "#f00" 自动展开成 "#ff0000"、RGB 字符串 "rgb(255,0,0)"、HSL 字符串 "hsl(0,100%,50%)"、纯数字 "255,0,0"。
+
+鲁棒性是重点：RGB 越界要截断（传 300 截到 255，传 -10 截到 0），HSL 角度要归一化（传 720 等于 0，传 -30 等于 330），透明度 alpha 0-1 越界也截断。HEX 接受 3 位简写和 4 位带 alpha 简写、6 位、8 位四种长度。输入空字符串、纯空格、null、undefined 都不能让页面崩。Unicode 字符（用户复制粘贴可能带不可见字符）要剥掉。
+
+色盲模拟是另一个核心功能：用户选了一个颜色后，能切换看红绿色盲（deuteranopia）、蓝黄色盲（tritanopia）、全色盲（achromatopsia）下的视觉表现。色盲模拟算法用 brettel/Vienot 矩阵转换，culori 库里有现成的。或者用 color-blindness-emulation 这个 npm 包。
+
+对比度计算按 WCAG 2.1 标准：给两个颜色（前景+背景），算对比度比值（1-21），并标出是否符合 AA/AAA 标准（普通文字 4.5/7，大字 3/4.5）。这个 UI 要做成"选前景选背景"两个色块加实时大字号样例文字预览。
+
+屏幕吸管 API 用浏览器原生的 EyeDropper（Chrome 95+ 支持），点了之后用户在屏幕上选一个位置，工具读出那个像素的颜色填进来。如果浏览器不支持就隐藏这个按钮。React 组件用动态 import 加载避免 SSR 问题（虽然 Vite 是 SPA 不 SSR）。
+
+辅助功能还有：颜色历史（localStorage 存最近 50 个选过的色）、调色板生成（给定一个基色生成 10 个色阶，明度均匀变化）、命名颜色（CSS 命名颜色下拉选择）、复制到剪贴板（navigator.clipboard.writeText）、保存成图片（canvas 渲染色卡 PNG 下载）。
+
+界面布局：顶部是一个大的颜色预览块（当前色）+ 色板导航；中间是输入区（多 tab 切换不同格式输入）；下面是转换结果列表（所有格式平铺）；侧边栏是色盲模拟、对比度计算、历史颜色这些功能模块。多 tab 不够直观，做成单页长布局 + sticky 导航更好。
+
+路由用 react-router：/ 是主取色器、/contrast 是对比度页、/palette 是调色板页、/settings 是设置（默认格式、主题色、历史容量）。
+
+暗色主题用 next-themes 切换，配置存 localStorage。整个项目纯前端，build 后静态部署到 Vercel 或者 GitHub Pages。
+
+辅助功能的其他细节：色阶生成用 culori 的 interpolate 函数（默认 LCh 色彩空间插值，比 RGB 插值视觉上更均匀），输入基色 + 步数（10/20/50）+ 曲线（linear / even / reverse）生成色板。支持导出色板为 JSON、CSS variables、SCSS variables、Tailwind config 格式（每种格式用模板字符串拼）。
+
+WCAG 对比度计算：culori 里有 wcagContrast 函数直接算比值，UI 展示 1-21 的比值 + 几个 badge 标识（AA Large 通过、AA Normal 通过、AAA Large 通过、AAA Normal 通过）。前景色和背景色都用大字号 sample text 实时预览（"The quick brown fox jumps over the lazy dog" 24px）。
+
+命名颜色：CSS 4 的 named colors 有 148 个，写一个静态列表（不需要 runtime 计算），用户下拉选了之后切换到对应 hex。可以扩展 PANTONE 之类的（但要版权，加载慢，先不做）。
+
+大文件处理：1MB 以上不直接渲染完整文本，要么用 Monaco editor（自带的虚拟滚动支持大文件），要么自己实现一个简化版（只渲染前 1000 行 + 折叠提示）。Monaco 集成用 @monaco-editor/react 这个包。
+
+项目目录结构：src/ 下分 components/（UI 组件：ColorInput、FormatDisplay、ColorBlindSim、ContrastChecker、PaletteGenerator 等）、pages/（路由页面）、store/（zustand 状态：colorStore、historyStore、settingsStore）、lib/（culori 包装、wcag 计算、导出工具）、hooks/（自定义 hooks：useColorHistory、useDebounce、useLocalStorage）、types/（TypeScript 类型定义）、styles/（全局 CSS、Tailwind config）。
+
+TypeScript 类型定义严格：color.ts 里定义 ColorFormat = 'hex' | 'rgb' | 'hsl' | 'hsv' | 'cmyk' | 'lab' | 'lch'、RGB = {r: number; g: number; b: number; a?: number} 等。输入解析函数返回 {ok: true, color: Color} | {ok: false, error: string} 这种 discriminated union，调用方用 if (result.ok) narrowing。
+
+性能：输入框用 debounce（500ms）避免每键击都触发转换。颜色转换放 useMemo 里（依赖 input value）。长历史用 react-window 虚拟列表。
+
+测试不强求，但 wcag 对比度计算、颜色转换、hex 简写展开这几个纯函数用 vitest 写单元测试。
+
+构建：Vite 配置 build.target: 'es2020'、build.rollupOptions.output.manualChunks 分包（culori、react、monaco 分开），最终产物应该 < 500KB gzipped。
+
+部署：Vercel 推 main 分支自动部署，preview 分支给 PR 用。GitHub Actions 配 type check + build 检查 push。
